@@ -8,6 +8,11 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+/* ✅ ROOT ROUTE (FIX) */
+app.get("/", (req, res) => {
+  res.send("API is running 🚀");
+});
+
 /* DATABASE CONNECTION */
 const db = mysql.createConnection({
   host: process.env.DB_HOST,
