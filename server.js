@@ -24,69 +24,56 @@ const db = mysql.createPool({
   connectionLimit: 10,
   queueLimit: 0
 });
-
 /* ------------------ SIGNUP ------------------ */
 app.post("/signup", async (req, res) => {
   const { name, email, password } = req.body;
 
-  db.getConnection(async (err, connection) => {
-    if (err) return res.status(500).json({ message: "DB connection error" });
+  try {
+    const hashedPassword = await bcrypt.hash(password, 10);
 
-    try {
-      const hashedPassword = await bcrypt.hash(password, 10);
+    const sql =
+      "INSERT INTO eco_users (name, email, password) VALUES (?, ?, ?)";
 
-      const sql =
-        "INSERT INTO eco_users (name, email, password) VALUES (?, ?, ?)";
-
-      connection.query(sql, [name, email, hashedPassword], (err, result) => {
-        connection.release();
-
-        if (err) {
-          if (err.code === "ER_DUP_ENTRY") {
-            return res.status(400).json({ message: "Email already exists" });
-          }
-          return res.status(500).json({ message: err.message });
+    db.query(sql, [name, email, hashedPassword], (err, result) => {
+      if (err) {
+        if (err.code === "ER_DUP_ENTRY") {
+          return res.status(400).json({ message: "Email already exists" });
         }
+        return res.status(500).json({ message: err.message });
+      }
 
-        res.json({
-          message: "Signup successful",
-          user: { id: result.insertId, name, email }
-        });
+      res.json({
+        message: "Signup successful",
+        user: { id: result.insertId, name, email }
       });
-    } catch (err) {
-      connection.release();
-      res.status(500).json({ message: "Server error" });
-    }
-  });
+    });
+  } catch (err) {
+    res.status(500).json({ message: "Server error" });
+  }
 });
+
 
 /* ------------------ LOGIN ------------------ */
 app.post("/login", (req, res) => {
   const { email, password } = req.body;
 
-  db.getConnection((err, connection) => {
-    if (err) return res.status(500).json({ message: "DB connection error" });
+  const sql = "SELECT * FROM eco_users WHERE email = ?";
 
-    const sql = "SELECT * FROM eco_users WHERE email = ?";
+  db.query(sql, [email], async (err, result) => {
+    if (err || result.length === 0)
+      return res.status(400).json({ message: "User not found" });
 
-    connection.query(sql, [email], async (err, result) => {
-      connection.release();
+    const validPassword = await bcrypt.compare(
+      password,
+      result[0].password
+    );
 
-      if (err || result.length === 0)
-        return res.status(400).json({ message: "User not found" });
+    if (!validPassword)
+      return res.status(400).json({ message: "Invalid password" });
 
-      const validPassword = await bcrypt.compare(
-        password,
-        result[0].password
-      );
-
-      if (!validPassword)
-        return res.status(400).json({ message: "Invalid password" });
-
-      res.json({
-        message: "Login successful",
-        user: result[0]
-      });
+    res.json({
+      message: "Login successful",
+      user: result[0]
     });
   });
 });
