@@ -1,14 +1,15 @@
-const express = require('express');
-const cors = require('cors');
-const bcrypt = require('bcrypt');
-const mysql = require('mysql2');
-require('dotenv').config();
+const express = require("express");
+const cors = require("cors");
+const bcrypt = require("bcrypt");
+const mysql = require("mysql2");
+require("dotenv").config();
 
 const app = express();
+
 app.use(cors());
 app.use(express.json());
 
-/* ✅ ROOT ROUTE (FIX) */
+/* ✅ ROOT ROUTE */
 app.get("/", (req, res) => {
   res.send("API is running 🚀");
 });
@@ -22,100 +23,135 @@ const db = mysql.createConnection({
 });
 
 db.connect((err) => {
-  if (err) console.log("Database connection failed:", err);
-  else console.log("Database connected");
+  if (err) {
+    console.log("Database connection failed:", err);
+  } else {
+    console.log("Database connected");
+  }
 });
 
 /* ------------------ SIGNUP ------------------ */
 app.post("/signup", async (req, res) => {
   const { name, email, password } = req.body;
 
-  if (!name || !email || !password)
-    return res.status(400).json({ message: "All fields required" });
+  db.getConnection(async (err, connection) => {
+    if (err) return res.status(500).json({ message: "DB connection error" });
 
-  try {
-    const hashedPassword = await bcrypt.hash(password, 10);
+    try {
+      const hashedPassword = await bcrypt.hash(password, 10);
 
-    const sql = "INSERT INTO eco_users (name, email, password) VALUES (?, ?, ?)";
-    db.query(sql, [name, email, hashedPassword], (err, result) => {
-      if (err) {
-        if (err.code === "ER_DUP_ENTRY") {
-          return res.status(400).json({ message: "Email already exists" });
+      const sql = "INSERT INTO eco_users (name, email, password) VALUES (?, ?, ?)";
+
+      connection.query(sql, [name, email, hashedPassword], (err, result) => {
+        connection.release(); // 🔥 IMPORTANT
+
+        if (err) {
+          if (err.code === "ER_DUP_ENTRY") {
+            return res.status(400).json({ message: "Email already exists" });
+          }
+          return res.status(500).json({ message: err.message });
         }
-        return res.status(500).json({ message: err.message });
-      }
 
-      res.json({
-        message: "Signup successful",
-        user: { id: result.insertId, name, email }
+        res.json({
+          message: "Signup successful",
+          user: { id: result.insertId, name, email }
+        });
       });
-    });
-  } catch (err) {
-    res.status(500).json({ message: "Server error" });
-  }
+    } catch (err) {
+      connection.release();
+      res.status(500).json({ message: "Server error" });
+    }
+  });
 });
 
 /* ------------------ LOGIN ------------------ */
 app.post("/login", (req, res) => {
   const { email, password } = req.body;
 
-  const sql = "SELECT * FROM eco_users WHERE email = ?";
-  db.query(sql, [email], async (err, result) => {
-    if (err || result.length === 0)
-      return res.status(400).json({ message: "User not found" });
+  db.getConnection((err, connection) => {
+    if (err) return res.status(500).json({ message: "DB connection error" });
 
-    const validPassword = await bcrypt.compare(password, result[0].password);
+    const sql = "SELECT * FROM eco_users WHERE email = ?";
+    
+    connection.query(sql, [email], async (err, result) => {
+      connection.release(); // 🔥 VERY IMPORTANT
 
-    if (!validPassword)
-      return res.status(400).json({ message: "Invalid password" });
+      if (err || result.length === 0)
+        return res.status(400).json({ message: "User not found" });
 
-    res.json({
-      message: "Login successful",
-      user: result[0]
+      const validPassword = await bcrypt.compare(password, result[0].password);
+
+      if (!validPassword)
+        return res.status(400).json({ message: "Invalid password" });
+
+      res.json({
+        message: "Login successful",
+        user: result[0]
+      });
     });
   });
 });
-
 /* ------------------ USERS ------------------ */
-app.get('/users', (req, res) => {
-  db.query("SELECT id, name, email FROM eco_users", (err, results) => {
-    if (err) return res.status(500).json({ message: err.message });
-    res.json(results);
-  });
+app.get("/users", (req, res) => {
+  db.query(
+    "SELECT id, name, email FROM eco_users",
+    (err, results) => {
+      if (err) {
+        return res.status(500).json({ message: err.message });
+      }
+      res.json(results);
+    }
+  );
 });
 
 /* ------------------ PRODUCTS ------------------ */
-app.get('/products', (req, res) => {
+app.get("/products", (req, res) => {
   db.query("SELECT * FROM eco_products", (err, results) => {
-    if (err) return res.status(500).json({ message: err.message });
+    if (err) {
+      return res.status(500).json({ message: err.message });
+    }
     res.json(results);
   });
 });
 
-app.get('/products/:id', (req, res) => {
-  db.query("SELECT * FROM eco_products WHERE id = ?", [req.params.id], (err, result) => {
-    if (err) return res.status(500).json({ message: err.message });
-    res.json(result[0]);
-  });
+app.get("/products/:id", (req, res) => {
+  db.query(
+    "SELECT * FROM eco_products WHERE id = ?",
+    [req.params.id],
+    (err, result) => {
+      if (err) {
+        return res.status(500).json({ message: err.message });
+      }
+      res.json(result[0]);
+    }
+  );
 });
 
 /* CREATE PRODUCT */
-app.post('/products', (req, res) => {
+app.post("/products", (req, res) => {
   const { name, price, size, colour, image } = req.body;
 
-  const sql = "INSERT INTO eco_products (name, price, size, colour, image) VALUES (?, ?, ?, ?, ?)";
-  db.query(sql, [name, price, size, colour, image], (err, result) => {
-    if (err) return res.status(500).json({ message: err.message });
+  const sql =
+    "INSERT INTO eco_products (name, price, size, colour, image) VALUES (?, ?, ?, ?, ?)";
 
-    res.json({
-      message: "Product created",
-      id: result.insertId
-    });
-  });
+  db.query(
+    sql,
+    [name, price, size, colour, image],
+    (err, result) => {
+      if (err) {
+        return res.status(500).json({ message: err.message });
+      }
+
+      res.json({
+        message: "Product created",
+        id: result.insertId
+      });
+    }
+  );
 });
 
 /* UPDATE PRODUCT */
-app.put('/products/:id', (req, res) => {
+app.put("/products/:id", (req, res) => {
   const { name, price, size, colour, image } = req.body;
 
   const sql = `
@@ -124,28 +160,43 @@ app.put('/products/:id', (req, res) => {
     WHERE id=?
   `;
 
-  db.query(sql, [name, price, size, colour, image, req.params.id], (err) => {
-    if (err) return res.status(500).json({ message: err.message });
-    res.json({ message: "Product updated" });
-  });
+  db.query(
+    sql,
+    [name, price, size, colour, image, req.params.id],
+    (err) => {
+      if (err) {
+        return res.status(500).json({ message: err.message });
+      }
+      res.json({ message: "Product updated" });
+    }
+  );
 });
 
 /* DELETE PRODUCT */
-app.delete('/products/:id', (req, res) => {
-  db.query("DELETE FROM eco_products WHERE id = ?", [req.params.id], (err) => {
-    if (err) return res.status(500).json({ message: err.message });
-    res.json({ message: "Product deleted" });
-  });
+app.delete("/products/:id", (req, res) => {
+  db.query(
+    "DELETE FROM eco_products WHERE id = ?",
+    [req.params.id],
+    (err) => {
+      if (err) {
+        return res.status(500).json({ message: err.message });
+      }
+      res.json({ message: "Product deleted" });
+    }
+  );
 });
 
 /* ------------------ ENQUIRY ------------------ */
 app.post("/enquiry", (req, res) => {
   const { name, price } = req.body;
 
-  const sql = "INSERT INTO eco_enquiries (product_name, price) VALUES (?, ?)";
+  const sql =
+    "INSERT INTO eco_enquiries (product_name, price) VALUES (?, ?)";
 
   db.query(sql, [name, price], (err) => {
-    if (err) return res.status(500).json({ message: err.message });
+    if (err) {
+      return res.status(500).json({ message: err.message });
+    }
     res.json({ message: "Enquiry saved" });
   });
 });
@@ -154,10 +205,13 @@ app.post("/enquiry", (req, res) => {
 app.post("/payments", (req, res) => {
   const { productName, price, status } = req.body;
 
-  const sql = "INSERT INTO eco_payments (product_name, price, status) VALUES (?, ?, ?)";
+  const sql =
+    "INSERT INTO eco_payments (product_name, price, status) VALUES (?, ?, ?)";
 
   db.query(sql, [productName, price, status], (err) => {
-    if (err) return res.status(500).json({ message: err.message });
+    if (err) {
+      return res.status(500).json({ message: err.message });
+    }
     res.json({ message: "Payment saved" });
   });
 });
