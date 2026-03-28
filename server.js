@@ -14,20 +14,15 @@ app.get("/", (req, res) => {
   res.send("API is running 🚀");
 });
 
-/* DATABASE CONNECTION */
-const db = mysql.createConnection({
+/* ✅ DATABASE CONNECTION (FIXED) */
+const db = mysql.createPool({
   host: process.env.DB_HOST,
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME
-});
-
-db.connect((err) => {
-  if (err) {
-    console.log("Database connection failed:", err);
-  } else {
-    console.log("Database connected");
-  }
+  database: process.env.DB_NAME,
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0
 });
 
 /* ------------------ SIGNUP ------------------ */
@@ -40,10 +35,11 @@ app.post("/signup", async (req, res) => {
     try {
       const hashedPassword = await bcrypt.hash(password, 10);
 
-      const sql = "INSERT INTO eco_users (name, email, password) VALUES (?, ?, ?)";
+      const sql =
+        "INSERT INTO eco_users (name, email, password) VALUES (?, ?, ?)";
 
       connection.query(sql, [name, email, hashedPassword], (err, result) => {
-        connection.release(); // 🔥 IMPORTANT
+        connection.release();
 
         if (err) {
           if (err.code === "ER_DUP_ENTRY") {
@@ -72,14 +68,17 @@ app.post("/login", (req, res) => {
     if (err) return res.status(500).json({ message: "DB connection error" });
 
     const sql = "SELECT * FROM eco_users WHERE email = ?";
-    
+
     connection.query(sql, [email], async (err, result) => {
-      connection.release(); // 🔥 VERY IMPORTANT
+      connection.release();
 
       if (err || result.length === 0)
         return res.status(400).json({ message: "User not found" });
 
-      const validPassword = await bcrypt.compare(password, result[0].password);
+      const validPassword = await bcrypt.compare(
+        password,
+        result[0].password
+      );
 
       if (!validPassword)
         return res.status(400).json({ message: "Invalid password" });
@@ -91,14 +90,13 @@ app.post("/login", (req, res) => {
     });
   });
 });
+
 /* ------------------ USERS ------------------ */
 app.get("/users", (req, res) => {
   db.query(
     "SELECT id, name, email FROM eco_users",
     (err, results) => {
-      if (err) {
-        return res.status(500).json({ message: err.message });
-      }
+      if (err) return res.status(500).json({ message: err.message });
       res.json(results);
     }
   );
@@ -107,9 +105,7 @@ app.get("/users", (req, res) => {
 /* ------------------ PRODUCTS ------------------ */
 app.get("/products", (req, res) => {
   db.query("SELECT * FROM eco_products", (err, results) => {
-    if (err) {
-      return res.status(500).json({ message: err.message });
-    }
+    if (err) return res.status(500).json({ message: err.message });
     res.json(results);
   });
 });
@@ -119,9 +115,7 @@ app.get("/products/:id", (req, res) => {
     "SELECT * FROM eco_products WHERE id = ?",
     [req.params.id],
     (err, result) => {
-      if (err) {
-        return res.status(500).json({ message: err.message });
-      }
+      if (err) return res.status(500).json({ message: err.message });
       res.json(result[0]);
     }
   );
@@ -138,9 +132,7 @@ app.post("/products", (req, res) => {
     sql,
     [name, price, size, colour, image],
     (err, result) => {
-      if (err) {
-        return res.status(500).json({ message: err.message });
-      }
+      if (err) return res.status(500).json({ message: err.message });
 
       res.json({
         message: "Product created",
@@ -164,9 +156,7 @@ app.put("/products/:id", (req, res) => {
     sql,
     [name, price, size, colour, image, req.params.id],
     (err) => {
-      if (err) {
-        return res.status(500).json({ message: err.message });
-      }
+      if (err) return res.status(500).json({ message: err.message });
       res.json({ message: "Product updated" });
     }
   );
@@ -178,9 +168,7 @@ app.delete("/products/:id", (req, res) => {
     "DELETE FROM eco_products WHERE id = ?",
     [req.params.id],
     (err) => {
-      if (err) {
-        return res.status(500).json({ message: err.message });
-      }
+      if (err) return res.status(500).json({ message: err.message });
       res.json({ message: "Product deleted" });
     }
   );
@@ -194,9 +182,7 @@ app.post("/enquiry", (req, res) => {
     "INSERT INTO eco_enquiries (product_name, price) VALUES (?, ?)";
 
   db.query(sql, [name, price], (err) => {
-    if (err) {
-      return res.status(500).json({ message: err.message });
-    }
+    if (err) return res.status(500).json({ message: err.message });
     res.json({ message: "Enquiry saved" });
   });
 });
@@ -209,9 +195,7 @@ app.post("/payments", (req, res) => {
     "INSERT INTO eco_payments (product_name, price, status) VALUES (?, ?, ?)";
 
   db.query(sql, [productName, price, status], (err) => {
-    if (err) {
-      return res.status(500).json({ message: err.message });
-    }
+    if (err) return res.status(500).json({ message: err.message });
     res.json({ message: "Payment saved" });
   });
 });
